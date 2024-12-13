@@ -90,6 +90,8 @@ func (s *Server) HandleMessage(client *ClientContext, message string) (int, erro
 	// if private message
 	if strings.HasPrefix(message, "@") {
 		// do private message
+		s.EmptyMessage(client)
+		s.PrivateMessage(client, message)
 		return 0, nil
 	}
 	// if empty message
@@ -98,6 +100,7 @@ func (s *Server) HandleMessage(client *ClientContext, message string) (int, erro
 		return 0, nil
 	}
 	// or else broadcast to room
+	s.EmptyMessage(client)
 	s.BroadcastMessage(client, message)
 	return 0, nil
 }
@@ -108,11 +111,33 @@ func (s *Server) BroadcastMessage(sender *ClientContext, message string) {
 
 	for _, client := range s.clients {
 		if client.Username != sender.Username && client.Room == sender.Room {
-			// fmt.Fprintf(client.Conn, "[%s]: %s\n", sender, message)
-			s.EmptyMessage(sender)
 			s.SendMessage(client, sender, message)
 		}
 	}
+}
+
+func (s *Server) PrivateMessage(sender *ClientContext, message string) {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	parts := strings.SplitN(message, " ", 2)
+	if len(parts) < 2 {
+		s.SystemMessage(sender, "Invalid private message format. Use @<username> <message>.")
+		return
+	}
+	if !strings.HasPrefix(parts[0], "@") {
+		s.SystemMessage(sender, "Invalid private message format. Use @<username> <message>.")
+		return
+	}
+	recieverUsername := parts[0][1:]
+
+	reciever, exists := s.clients[recieverUsername]
+	if !exists {
+		s.SystemMessage(sender, fmt.Sprintf("User %s doesn't exist.", recieverUsername))
+		return
+	}
+
+	s.SendMessage(reciever, sender, fmt.Sprintf("(private) %s", parts[1]))
 }
 
 func (s *Server) CreateRoom(client *ClientContext, roomName, password string) bool {
