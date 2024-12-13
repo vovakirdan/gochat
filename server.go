@@ -55,6 +55,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			fmt.Println("Error reading password:", err)
 			return
 		}
+		password = strings.TrimSpace(password)
 		// if password is correct, welcome back
 		if s.database.ValidateUser(username, password) {
 			fmt.Fprintln(conn, "Everything is correct!")
