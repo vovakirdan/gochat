@@ -9,13 +9,13 @@ func main() {
 	server := NewServer()
 	go server.Run()
 
-	listener, err := net.Listen("tcp", ":1337")
+	listener, err := net.Listen("tcp", ":7878")
 	if err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 	defer listener.Close()
 
-	log.Println("Server started on :1337")
+	log.Println("Server started on :7878")
 
 	for {
 		conn, err := listener.Accept()
