@@ -11,6 +11,7 @@ func NewDatabase() *Database {
 		users: make(map[string]string),
 		rooms: make(map[string]string),
 	}
+	db.Register("admin", "admin")  // create an admin
 	return db
 }
 

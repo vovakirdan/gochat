@@ -44,8 +44,9 @@ func (s *Server) HandleConnection(conn net.Conn) {
 	// if user already exists, type nice to see you and ask for a password
 	if s.database.IsUserExists(username) {
 		// if client is online (already in clients map) - say you can't log in
-		if _, ok := s.clients[username]; ok {
+		if client, ok := s.clients[username]; ok {
 			fmt.Fprintf(conn, "Hmm... seems like you are already in!\n")
+			s.SystemMessage(client, fmt.Sprintf("Someone trying to connect from %s", conn.RemoteAddr().String()))
 			return
 		}
 		fmt.Fprintf(conn, "Nice to meet you, %s!\nEnter your password\n> ", username)
@@ -74,11 +75,14 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			return
 		}
 	}
-
+	isAdmin := false
+	if username == "admin" {isAdmin = true}  // todo make it better
 	client := &ClientContext{
 		Username: username,
 		Conn: conn,
 		Room: "main",
+		Admin: isAdmin,
+		LastTimeIn: time.Now().Format("2006-01-02 15:04:05"),  // dunno why
 	}
 
 	s.clientsMu.Lock()
@@ -103,10 +107,28 @@ func (s *Server) HandleConnection(conn net.Conn) {
 		}
 		
 		switch status {
-		case 1:
+		case 1:  // empty command
+			s.EmptyMessage(client)
+		case 2:  // wrong command
 			s.Info(fmt.Sprintf("User (%s) in room [%s] typed wrong command: %s\n", username, client.Room, message))
-		case 2:
-			fmt.Printf("User %s in room %s typed private message: %s\n", username, client.Room, message)
+		case 3:  // unknown switch type
+			s.SystemMessage(client, "Unknown switch type")
+			s.Info(fmt.Sprintf("User (%s) in room [%s] typed unknown switch type: %s\n", username, client.Room, message))
+		case 4: // unknown create type
+			s.SystemMessage(client, "Unknown create type")
+			s.Info(fmt.Sprintf("User (%s) in room [%s] typed unknown create type: %s\n", username, client.Room, message))
+		case 5: // unknown list type
+			s.SystemMessage(client, "Unknown list type")
+			s.Info(fmt.Sprintf("User (%s) in room [%s] typed unknown list type: %s\n", username, client.Room, message))
+		case 6: // unknown count type
+			s.SystemMessage(client, "Unknown count type")
+			s.Info(fmt.Sprintf("User (%s) in room [%s] typed unknown count type: %s\n", username, client.Room, message))
+		case 10: // client wants to logout
+			s.SystemMessage(client, "Goodbye, see you later.")
+			s.RemoveClient(username)
+			return
+		// default:
+			// s.SystemMessage(client, "Invalid or unknown command. Type /help <command> to see commands.")
 		}
 	}
 }
@@ -115,14 +137,9 @@ func (s *Server) HandleMessage(client *ClientContext, message string) (int, erro
 	message = strings.TrimSpace(message)
 	// if command
 	if strings.HasPrefix(message, "/") {
-		if s.ParseCommand(client, message) {
-			// if everything is ok
-			return 0, nil
-		} else {
-			s.SystemMessage(client, "Invalid or unknown command. Type /help <command> to see commands.")
-			return 1, nil
-		}
-	} 
+		status, err := s.ParseCommand(client, message) 
+		return status, err
+	}
 	// if private message
 	if strings.HasPrefix(message, "@") {
 		// do private message
@@ -178,7 +195,12 @@ func (s *Server) PrivateMessage(sender *ClientContext, message string) {
 
 func (s *Server) CreateRoom(client *ClientContext, roomName, password string) bool {
 	if s.database.AddRoom(roomName, password) {
-		s.SystemMessage(client, fmt.Sprintf("Room '%s' created.\n", roomName))
+		isPrivate := ""
+		if s.database.IsPrivateRoom(roomName) {
+			isPrivate = "(private) "
+		}
+		s.SystemMessage(client, fmt.Sprintf("%sRoom '%s' created.\n", isPrivate, roomName))
+		s.Info(fmt.Sprintf("%sRoom '%s' created.\n", isPrivate, roomName))
 		return true
 	}
 	s.SystemMessage(client, "Room with this name already exists.")
@@ -234,7 +256,7 @@ func (s *Server) EmptyMessage(client *ClientContext) {
 func (s *Server) Info(message string) {
 	fmt.Print("[")
 	fmt.Print(time.Now().Format("2006-01-02 15:04:05"))
-	fmt.Print("] [INFO]")
+	fmt.Print("] [INFO] ")
 	fmt.Println(message)
 }
 
@@ -266,11 +288,29 @@ func (s *Server) ListSomethingToClient(client *ClientContext, what string) {
 	s.EmptyMessage(client)
 }
 
-func (s *Server) ParseCommand(client *ClientContext, message string) bool {
+func (s *Server) SendHelp(client *ClientContext, command string) {
+	switch command {
+	case "switch":
+		s.SystemMessage(client, "Usage: /switch room <room_name> [password]")
+	case "create":
+		s.SystemMessage(client, "Usage: /create room <room_name> <password>")
+	default:
+		message := "Available commands:\n"
+		message += "/create | /cr room <room_name> <password>\n"
+		message += "If no password specified, will create opened room: everyone can join.\n"
+		message += "/switch | /sw room <room_name> [password]\n"
+		message += "/list <rooms|users>\n"
+		message += "/help <command>\n"
+		message += "Will show description of specified command."
+		message += "/quit | /q\n"
+		message += "Log out from account."
+		s.SystemMessage(client, message)
+	}
+	s.EmptyMessage(client)
+}
+
+func (s *Server) ParseCommand(client *ClientContext, message string) (int, error) {
 	// assume message starts with "/"
-	// unlock client
-	// s.clientsMu.Lock()
-	// defer s.clientsMu.Unlock()
 
 	// preprocess message: trim, split, etc
 	message = strings.TrimSpace(message)
@@ -279,7 +319,7 @@ func (s *Server) ParseCommand(client *ClientContext, message string) bool {
 	argscount := len(parts)
 	if len(parts) == 0 {
 		// empty command
-		return false
+		return 1, nil
 	}
 
 	command := parts[0]
@@ -288,53 +328,96 @@ func (s *Server) ParseCommand(client *ClientContext, message string) bool {
 		// move to the new room example
 		if argscount < 2 {
 			s.SystemMessage(client, "You need to specify what do you want to switch.")
-			return true
+			return 2, nil
 		}
 		switch parts[1] {
 		case "room":
 			if argscount < 3 {
 				s.ListSomethingToClient(client, "rooms")
-				return true
+				return 0, nil
 			} 
 			if argscount == 3 {
 				s.ChangeRoom(client.Username, parts[2], "")  // non-private room
-				return true
+				return 0, nil
 			} 
 			if argscount == 4 {
 				s.ChangeRoom(client.Username, parts[2], parts[3])  // private room
+				return 0, nil
 			}
 		default:
 			// unknown switch type
-			return false
+			return 3, nil
 		}
-		return true
 	case "/create":
 		// create room example
 		if argscount < 2 {
 			s.SystemMessage(client, "You need to specify what do you want to create.")
-			return true
+			return 2, nil
 		}
 		switch parts[1] {
 		case "room":
 			if argscount < 3 {
 				s.SystemMessage(client, "You need to specify room name and (if neccessary) password")
-				return true
+				return 0, nil
 			} 
 			if argscount == 3 {
 				s.CreateRoom(client, parts[2], "")  // non-private room
-				return true
+				return 0, nil
 			} 
 			if argscount == 4 {
 				s.CreateRoom(client, parts[2], parts[3])  // private room
-				return true
+				return 0, nil
 			}
 		default:
 			// unknown create type
-			return false
+			return 4, nil
 		}
-		return true
+	case "/list":
+		if argscount < 2 {
+			s.SystemMessage(client, "You need to specify what do you want to list.")
+			return 2, nil
+		}
+		switch parts[1] {
+		case "rooms":
+			s.ListSomethingToClient(client, "rooms")
+			return 0, nil
+		case "users":
+			s.ListSomethingToClient(client, "users")
+			return 0, nil
+		default:
+			// unknown list type
+			return 5, nil
+		}
+	case "/count":
+		if argscount < 2 {
+			s.SystemMessage(client, "You need to specify what do you want to count.")
+			return 2, nil
+		}
+		switch parts[1] {
+		case "rooms":
+			roomsCount := len(s.database.rooms)
+			s.SystemMessage(client, fmt.Sprintf("There are %d rooms.", roomsCount))
+			return 0, nil
+		case "users":
+			usersCount := len(s.database.users)
+			s.SystemMessage(client, fmt.Sprintf("There are %d users.", usersCount))
+			return 0, nil
+		default:
+			// unknown count type
+			return 6, nil
+		}
+	case "/quit", "/q":
+		return 10, nil 
+	case "/help":
+		if argscount < 2 {
+			s.SendHelp(client, "")
+			return 0, nil
+		}
+		s.SendHelp(client, parts[1])
+		return 0, nil
 	default:
 		// unknown command
-		return false
+		return 2, nil
 	}
+	return 0, nil
 }
