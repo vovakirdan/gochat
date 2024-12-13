@@ -56,11 +56,6 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			return
 		}
 		password = strings.TrimSpace(password)
-		passwordStrength := CheckPasswordStrength(password)
-		if passwordStrength != 0 {
-			fmt.Fprintf(conn, DescribePasswordStrength(passwordStrength))
-			return
-		}
 		// if password is correct, welcome back
 		if s.database.ValidateUser(username, password) {
 			fmt.Fprintln(conn, "Everything is correct!")
@@ -75,7 +70,23 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			fmt.Println("Error reading password:", err)
 			return
 		}
-		// todo check for password strength
+		// passwordStrength := CheckPasswordStrength(password)
+		for passwordStrength := CheckPasswordStrength(password); passwordStrength != 0; {
+			description := DescribePasswordStrength(passwordStrength)
+			fmt.Fprintln(conn, description)
+			fmt.Fprint(conn, "Press enter to auto-generate password.\nType new password if you want to.\n> ")
+			password, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading password:", err)
+				return
+			}
+			password = strings.TrimSpace(password)
+			if password == "" {break}
+		}
+		if password == "" {
+			password = GeneratePassword()
+			fmt.Fprintf(conn, "Your new password `%s`. Remember it\n", password)
+		}
 		if !s.database.Register(username, password) {
 			fmt.Fprintf(conn, "Error registering user %s\n", username)
 			return
@@ -302,7 +313,7 @@ func (s *Server) ListSomethingToClient(client *ClientContext, what string) {
 	default:
 		s.SystemMessage(client, "Unknown list type")
 	}
-	s.EmptyMessage(client)
+	// s.EmptyMessage(client)  // no need
 }
 
 func (s *Server) SendHelp(client *ClientContext, command string) {
