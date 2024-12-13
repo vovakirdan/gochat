@@ -12,6 +12,7 @@ func NewDatabase() *Database {
 		rooms: make(map[string]string),
 	}
 	db.Register("admin", "admin")  // create an admin
+	db.AddRoom("main", "")
 	return db
 }
 

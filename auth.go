@@ -3,7 +3,6 @@ package main
 import (
 	"unicode"
 	"strings"
-	"time"
 	"math/rand"
 )
 
@@ -74,20 +73,20 @@ func DescribePasswordStrength(strength int) string {
 }
 
 func GeneratePassword() string {
-	length := 8
-
+	
 	// Символьные группы
 	digits := "0123456789"
 	lowers := "abcdefghijklmnopqrstuvwxyz"
 	uppers := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	specials := "!@#$%^&*()-_=+[]{}|;:,.<>?/"
-
+	
 	// Объединяем все символы
 	allChars := digits + lowers + uppers + specials
-
+	
 	// Гарантируем наличие хотя бы одного символа из каждой группы
 	var password strings.Builder
-	rand.Seed(time.Now().UnixNano())
+	// rand.Seed(time.Now().UnixNano())
+	length := rand.Intn(6) + 6
 	password.WriteByte(digits[rand.Intn(len(digits))])
 	password.WriteByte(lowers[rand.Intn(len(lowers))])
 	password.WriteByte(uppers[rand.Intn(len(uppers))])

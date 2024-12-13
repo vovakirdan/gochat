@@ -70,6 +70,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			fmt.Println("Error reading password:", err)
 			return
 		}
+		password = strings.TrimSpace(password)
 		// passwordStrength := CheckPasswordStrength(password)
 		for passwordStrength := CheckPasswordStrength(password); passwordStrength != 0; {
 			description := DescribePasswordStrength(passwordStrength)
@@ -81,11 +82,12 @@ func (s *Server) HandleConnection(conn net.Conn) {
 				return
 			}
 			password = strings.TrimSpace(password)
-			if password == "" {break}
-		}
-		if password == "" {
-			password = GeneratePassword()
-			fmt.Fprintf(conn, "Your new password `%s`. Remember it\n", password)
+			if password == "" {
+				password = GeneratePassword()
+				coloredPassword := ColoredText(password, Magenta)
+				fmt.Fprintf(conn, "Your new password `%s`. Remember it.\n", coloredPassword)
+				break
+			}
 		}
 		if !s.database.Register(username, password) {
 			fmt.Fprintf(conn, "Error registering user %s\n", username)
@@ -106,13 +108,13 @@ func (s *Server) HandleConnection(conn net.Conn) {
 	s.clients[username] = client
 	s.clientsMu.Unlock()
 
-	fmt.Fprintf(conn, "Welcome, %s! You are now in the 'main' room.\n(%s): ", username, username)
+	fmt.Fprintf(conn, "Welcome, %s! You are now in the 'main' room.\n(%s): ", username, ColoredText(username, Cyan))
 
 	for {
 		message, err := reader.ReadString('\n')
 		// if error
 		if err != nil {
-			fmt.Printf("User %s disconnected\n", username)
+			s.Info(fmt.Sprintf("User %s disconnected\n", username))
 			s.RemoveClient(username)
 			return
 		}
@@ -207,8 +209,8 @@ func (s *Server) PrivateMessage(sender *ClientContext, message string) {
 		s.SystemMessage(sender, fmt.Sprintf("User %s doesn't exist.", recieverUsername))
 		return
 	}
-
-	s.SendMessage(reciever, sender, fmt.Sprintf("(private) %s", parts[1]))
+	privateLabel := ColoredText("(private)", Gray)
+	s.SendMessage(reciever, sender, fmt.Sprintf("%s %s", privateLabel, parts[1]))
 }
 
 func (s *Server) CreateRoom(client *ClientContext, roomName, password string) bool {
@@ -244,7 +246,7 @@ func (s *Server) ChangeRoom(username, newRoom, givenPassword string) bool {
 	}
 
 	client.Room = newRoom
-	s.SystemMessage(client, fmt.Sprintf("You have been moved to the '%s' room.\n", newRoom))
+	s.SystemMessage(client, fmt.Sprintf("You have been moved to the '%s' room.\n", ColoredText(newRoom, Magenta)))
 	return true
 }
 
@@ -259,16 +261,21 @@ func (s *Server) RemoveClient(username string) {
 // utils
 
 func (s *Server) SystemMessage(client *ClientContext, message string) {
-	fmt.Fprintf(client.Conn, "\n(system): %s\n", message)
+	coloredSystemLabel := ColoredText("(system)", Red)
+	fmt.Fprintf(client.Conn, "\n%s: %s\n", coloredSystemLabel, message)
 	s.EmptyMessage(client)
 }
 
 func (s *Server) SendMessage(client, sender *ClientContext, message string) {
-	fmt.Fprintf(client.Conn, "\n[%s] %s: %s\n(%s): ", sender.Room, sender.Username, message, client.Username)
+	fmt.Fprintf(client.Conn, "\n[%s] %s: %s\n(%s): ",
+	 sender.Room,
+	 sender.Username,
+	 message,
+	 ColoredText(client.Username, Cyan))
 }
 
 func (s *Server) EmptyMessage(client *ClientContext) {
-	fmt.Fprintf(client.Conn, "(%s): ", client.Username)
+	fmt.Fprintf(client.Conn, "(%s): ", ColoredText(client.Username, Cyan))
 }
 
 func (s *Server) IsClientOnline(client *ClientContext) bool {
@@ -279,7 +286,8 @@ func (s *Server) IsClientOnline(client *ClientContext) bool {
 func (s *Server) Info(message string) {
 	fmt.Print("[")
 	fmt.Print(time.Now().Format("2006-01-02 15:04:05"))
-	fmt.Print("] [INFO] ")
+	info := ColoredText("[INFO]", Yellow)
+	fmt.Printf("] %s ", info)
 	fmt.Println(message)
 }
 
@@ -292,7 +300,7 @@ func (s *Server) ListSomethingToClient(client *ClientContext, what string) {
 		for roomName := range s.database.rooms {
 			answer += fmt.Sprintf("%d) %s", i + 1, roomName)
 			if s.database.IsPrivateRoom(roomName) {
-				answer += " (private)"
+				answer += ColoredText(" (private)", Gray)
 			}
 			answer += "\n"
 			i++
@@ -304,8 +312,8 @@ func (s *Server) ListSomethingToClient(client *ClientContext, what string) {
 		i := 0
 		for username := range s.database.users {
 			if username == "admin" {continue}
-			isOnline := " offline"
-			if s.IsClientOnline(client) {isOnline = " online"}
+			isOnline := ColoredText(" offline", Red)
+			if s.IsClientOnline(client) {isOnline = ColoredText(" online", Green)}
 			answer += fmt.Sprintf("%d) %s %s\n", i + 1, username, isOnline)
 			i++
 		}
