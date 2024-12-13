@@ -56,6 +56,11 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			return
 		}
 		password = strings.TrimSpace(password)
+		passwordStrength := CheckPasswordStrength(password)
+		if passwordStrength != 0 {
+			fmt.Fprintf(conn, DescribePasswordStrength(passwordStrength))
+			return
+		}
 		// if password is correct, welcome back
 		if s.database.ValidateUser(username, password) {
 			fmt.Fprintln(conn, "Everything is correct!")
@@ -126,6 +131,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			s.Info(fmt.Sprintf("User (%s) in room [%s] typed unknown count type: %s\n", username, client.Room, message))
 		case 10: // client wants to logout
 			s.SystemMessage(client, "Goodbye, see you later.")
+			fmt.Fprintf(client.Conn, "Press enter to disconnect...")
 			s.RemoveClient(username)
 			return
 		// default:
