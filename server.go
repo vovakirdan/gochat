@@ -30,6 +30,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
+	s.Info(fmt.Sprintf("New connection from %s", conn.RemoteAddr().String()))
 	fmt.Fprintf(conn, "Welcome to the GoChat!\n\nWho are you?\n(stranger): ")
 
 	username, err := reader.ReadString('\n')
@@ -38,6 +39,41 @@ func (s *Server) HandleConnection(conn net.Conn) {
 		return
 	}
 	username = strings.TrimSpace(username)
+
+	// sign up/in logic
+	// if user already exists, type nice to see you and ask for a password
+	if s.database.IsUserExists(username) {
+		// if client is online (already in clients map) - say you can't log in
+		if _, ok := s.clients[username]; ok {
+			fmt.Fprintf(conn, "Hmm... seems like you are already in!\n")
+			return
+		}
+		fmt.Fprintf(conn, "Nice to meet you, %s!\nEnter your password\n> ", username)
+		password, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading password:", err)
+			return
+		}
+		// if password is correct, welcome back
+		if s.database.ValidateUser(username, password) {
+			fmt.Fprintln(conn, "Everything is correct!")
+		} else {
+			fmt.Fprintf(conn, "Wrong password for user %s!\n", username)
+			return
+		}
+	} else {
+		fmt.Fprintf(conn, "We don't know each other, let's register, %s!\nEnter password\n> ", username)
+		password, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading password:", err)
+			return
+		}
+		// todo check for password strength
+		if !s.database.Register(username, password) {
+			fmt.Fprintf(conn, "Error registering user %s\n", username)
+			return
+		}
+	}
 
 	client := &ClientContext{
 		Username: username,

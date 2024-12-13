@@ -40,3 +40,8 @@ func (db *Database) IsPrivateRoom(room string) bool {
 	room_password, exists := db.rooms[room]
 	return exists && room_password != "" 
 }
+
+func (db *Database) IsUserExists(username string) bool {
+	_, exists := db.users[username]
+	return exists
+}
