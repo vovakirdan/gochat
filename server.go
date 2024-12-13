@@ -131,8 +131,8 @@ func (s *Server) HandleConnection(conn net.Conn) {
 			s.Info(fmt.Sprintf("User (%s) in room [%s] typed unknown count type: %s\n", username, client.Room, message))
 		case 10: // client wants to logout
 			s.SystemMessage(client, "Goodbye, see you later.")
-			fmt.Fprintf(client.Conn, "Press enter to disconnect...")
 			s.RemoveClient(username)
+			fmt.Fprintf(client.Conn, "Press enter to disconnect...")
 			return
 		// default:
 			// s.SystemMessage(client, "Invalid or unknown command. Type /help <command> to see commands.")
@@ -260,6 +260,11 @@ func (s *Server) EmptyMessage(client *ClientContext) {
 	fmt.Fprintf(client.Conn, "(%s): ", client.Username)
 }
 
+func (s *Server) IsClientOnline(client *ClientContext) bool {
+	_, exist := s.clients[client.Username]
+	return exist
+}
+
 func (s *Server) Info(message string) {
 	fmt.Print("[")
 	fmt.Print(time.Now().Format("2006-01-02 15:04:05"))
@@ -271,24 +276,29 @@ func (s *Server) ListSomethingToClient(client *ClientContext, what string) {
 	switch what {
 	case "rooms":
 		// iterate over database.rooms and create a message for client
-		s.SystemMessage(client, "Available rooms:")
+		answer := "Avaliable rooms:\n"
 		i := 0
 		for roomName := range s.database.rooms {
+			answer += fmt.Sprintf("%d) %s", i + 1, roomName)
 			if s.database.IsPrivateRoom(roomName) {
-				fmt.Fprintf(client.Conn, "%d) %s private\n", i, roomName)
-			} else {
-				fmt.Fprintf(client.Conn, "%d) %s\n", i, roomName)
+				answer += " (private)"
 			}
+			answer += "\n"
 			i++
 		}
+		s.SystemMessage(client, answer)
 	case "users":
 		// iterate over database.users and create a message for client
-		s.SystemMessage(client, "Available users:")
+		answer := "Avaliable users:\n"
 		i := 0
 		for username := range s.database.users {
-			fmt.Fprintf(client.Conn, "%d) %s\n", i, username)
+			if username == "admin" {continue}
+			isOnline := " offline"
+			if s.IsClientOnline(client) {isOnline = " online"}
+			answer += fmt.Sprintf("%d) %s %s\n", i + 1, username, isOnline)
 			i++
 		}
+		s.SystemMessage(client, answer)
 	default:
 		s.SystemMessage(client, "Unknown list type")
 	}
@@ -303,14 +313,16 @@ func (s *Server) SendHelp(client *ClientContext, command string) {
 		s.SystemMessage(client, "Usage: /create room <room_name> <password>")
 	default:
 		message := "Available commands:\n"
-		message += "/create | /cr room <room_name> <password>\n"
-		message += "If no password specified, will create opened room: everyone can join.\n"
-		message += "/switch | /sw room <room_name> [password]\n"
-		message += "/list <rooms|users>\n"
-		message += "/help <command>\n"
-		message += "Will show description of specified command."
-		message += "/quit | /q\n"
-		message += "Log out from account."
+		message += "	/create | /cr room <room_name> <password>\n"
+		message += "	If no password specified, will create opened room: everyone can join.\n"
+		message += "	/switch | /sw room <room_name> [password]\n"
+		message += "	Swith to another room if avaliable\n"
+		message += "	/list <rooms|users>\n"
+		message += "	Get a list of avaliable users"
+		message += "	/help <command>\n"
+		message += "	Will show description of specified command."
+		message += "	/quit | /q\n"
+		message += "	Log out from account."
 		s.SystemMessage(client, message)
 	}
 	s.EmptyMessage(client)
@@ -406,7 +418,7 @@ func (s *Server) ParseCommand(client *ClientContext, message string) (int, error
 			s.SystemMessage(client, fmt.Sprintf("There are %d rooms.", roomsCount))
 			return 0, nil
 		case "users":
-			usersCount := len(s.database.users)
+			usersCount := len(s.database.users) - 1  // except admin
 			s.SystemMessage(client, fmt.Sprintf("There are %d users.", usersCount))
 			return 0, nil
 		default:
