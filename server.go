@@ -337,14 +337,14 @@ func (s *Server) SendHelp(client *ClientContext, command string) {
 		message += "	/switch | /sw room <room_name> [password]\n"
 		message += "	Swith to another room if avaliable\n"
 		message += "	/list <rooms|users>\n"
-		message += "	Get a list of avaliable users"
+		message += "	Get a list of avaliable users\n"
 		message += "	/help <command>\n"
-		message += "	Will show description of specified command."
+		message += "	Will show description of specified command.\n"
 		message += "	/quit | /q\n"
-		message += "	Log out from account."
+		message += "	Log out from account.\n"
 		s.SystemMessage(client, message)
 	}
-	s.EmptyMessage(client)
+	// s.EmptyMessage(client)
 }
 
 func (s *Server) ParseCommand(client *ClientContext, message string) (int, error) {
